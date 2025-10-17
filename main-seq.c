@@ -33,8 +33,21 @@ void runSeq(uint32_t size_A) {
         printf("Maximmum number of digits equals zero!?\n");
         exit(1);
     }
-
+    
+    double elapsed;
+    struct timeval t_start, t_end, t_diff;
+    gettimeofday(&t_start, NULL); 
+    
     radixSortSeq<T>(A, B, size_A, d);
+
+    gettimeofday(&t_end, NULL);
+    timeval_subtract(&t_diff, &t_end, &t_start);
+    elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec);
+    double flopsPerArray = 4.0 * size_A * d;
+    double gigaFlops = (flopsPerArray * 1.0e-3f) / elapsed; 
+    
+    printf("Sequential version of radix sort runs in: %.1f microsecs, GFlops/sec: %.2f\n", elapsed, gigaFlops);
+
     for (int i = 0; i < size_A; i++) {
         printf("%d ", A[i]);
     }

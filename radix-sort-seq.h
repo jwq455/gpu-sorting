@@ -31,20 +31,13 @@ void countingSort(T* A, T* B, int sizeA, int k, int ith) {
     for (int j = 0; j < sizeA; j++) C[digit(A[j], k, ith)]++;
     // Inclusive scan of C - Number of elements less than or equal to i
     for (int i = 1; i < k; i++) C[i] = C[i]+C[i-1];
-    for (int i = 0; i < k; i++) {
-        printf("%d ", C[i]);
-    }
-    printf("\n");
+
     // Inserts A elements into B in a sorted stable order
     for (int j = sizeA-1; j>=0; j--) {
         int idx = digit(A[j], k, ith);
-        // printf("Idx: %d\n", idx);
-        printf("A[%d]=%d\n", j, A[j]);
-        printf("C[%d]=%d\n", idx, C[idx]);
         B[C[idx]-1] = A[j];
         C[idx]--;
     }
-    printf("\n");
 }
 
 template<class T>
