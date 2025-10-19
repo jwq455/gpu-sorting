@@ -98,7 +98,7 @@ int main (int argc, char * argv[]) {
 
     bool success = validateZ(h_keys_res, N);
 
-    printf("CUB Sorting for N=%lu runs in: %.2f us, VALID: %d\n", N, elapsed, success);
+    printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %lu, VALID: %d\n", N, elapsed, (N/elapsed)*1e9, success);
 
     // Cleanup and closing
     cudaFree(d_keys_in); cudaFree(d_keys_out);
