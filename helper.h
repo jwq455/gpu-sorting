@@ -23,21 +23,21 @@ typedef unsigned long long uint64_t;
 
 #define min(a,b) ( ((a)<(b))? (a) : (b) )
 
-// #define gpuAssert(code) { __cudassert((code), __FILE__, __LINE__); }
-// #define gpuCheck(code) { __cudassert((code), __FILE__, __LINE__, false); }
+#define gpuAssert(code) { __cudassert((code), __FILE__, __LINE__); }
+#define gpuCheck(code) { __cudassert((code), __FILE__, __LINE__, false); }
 
 
-// void __cudassert(cudaError_t code,
-//                  const char *file,
-//                  int line,
-//                  bool do_abort_on_err = true) {
-//   if (code != cudaSuccess) {
-//     fprintf(stderr, "GPU Error in %s (line %d): %s\n",
-//             file, line, cudaGetErrorString(code));
-//     if (do_abort_on_err)
-//         exit(1);
-//   }
-// }
+void __cudassert(cudaError_t code,
+                 const char *file,
+                 int line,
+                 bool do_abort_on_err = true) {
+  if (code != cudaSuccess) {
+    fprintf(stderr, "GPU Error in %s (line %d): %s\n",
+            file, line, cudaGetErrorString(code));
+    if (do_abort_on_err)
+        exit(1);
+  }
+}
 
 int timeval_subtract(struct timeval *result, struct timeval *t2, struct timeval *t1)
 {
