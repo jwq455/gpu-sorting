@@ -5,20 +5,61 @@ using namespace std;
 
 #define GPU_RUNS    50
 
-runRadixSort<B, Q, lgH>(d_A, d_B, h_B, N) {
+template<int B, int Q, int lgH>
+void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     unsigned long elementsPerBlock = B*Q;
-    cd 
     // Setup execution parameters
-    const int grid = (N + elementsPerBlock - 1) / elementsPerBlock;
+    const int blocks = (N + elementsPerBlock - 1) / elementsPerBlock;
+    const int H = 1<<lgH;
+
+    // Temporary I/O buffers
+    // we use d_A - will be overwritten, is this ok??
+
+    // uint32_t *d_ind;
+    // cudaMalloc((void **) &d_ind, N);
+    // cudaMemcpy(d_ind, d_A, N, cudaMemcpyDeviceToDevice);
+
+    // We use d_B
+
+    // uint32_t *d_out;
+    // cudaMalloc((void **) &d_out, N);
+    // cudaMemset(d_out, 0, N);
+
+    // global Historgram buffer
+    uint32_t *glbHist;
+    cudaMalloc((void **) &glbHist, blocks*H);
+    cudaMemset(glbHist, 0, blocks*H);
+
+    // Loop over sizeof(elem)/lgH
+    // for (int i_cpu = 0; i_cpu < sizeof(uint32_t)/lgH; i_cpu++) {
+        // globla_hist[blocks][H]
+    histogramKernel<Q, H><<<blocks, B>>>(d_ind, glbHist, N, i_cpu)
+        // Pseudo - use kernels from assignments
+        // transpose_hist()
+        // scan_hist()
+        // transpose_scan()
+        // Second kernel - Does sorting and scattering into global memory
+
+        // Update d_ind = d_out 
+
+    // }
+
+    uint32_t *hist_h = malloc(sizeof(uint32_t)*blocks*H);
+    cudaMemcpy(hist_h, glbHist, blocks*H, cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < blocks; i++) {
+        for (int j = 0; j < H; j++) {
+            printf("%d ", hist_h[i*blocks + j]);
+        }
+        printf("\n");
+    }
     
+}
+
+template<int B, int Q, int lgH>
+void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     // dry run
-    // RUN ALGORITHM HERE!
-    histogramKernel<<<grid, B>>>()
-    transposeKer()
-    scanKernel()
-
-
-    runRadixKernel<lgH><<<grid, B>>>(d_X, d_X_tr, M, N);
+    radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
     cudaDeviceSynchronize();
     gpuAssert( cudaPeekAtLastError() );
 
@@ -53,8 +94,8 @@ void runAll(size_t N) {
     srand(2025); 
 
     // Allocate host memory for input and output array
-    uint32_t *h_A = (uint32_t*)calloc(sizeof(uint32_t), N);
-    uint32_t *h_B = (uint32_t*)calloc(sizeof(uint32_t), N);
+    uint32_t *h_A = (uint32_t*)calloc(N, sizeof(uint32_t));
+    uint32_t *h_B = (uint32_t*)calloc(N, sizeof(uint32_t));
 
     // Initialize input array
     randomInit<uint32_t>(h_A, N);
