@@ -11,6 +11,7 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     // Setup execution parameters
     const int blocks = (N + elementsPerBlock - 1) / elementsPerBlock;
     const int H = 1<<lgH;
+    const int CHUNK = (H + B - 1) / B; 
 
     // Temporary I/O buffers
     // we use d_A - will be overwritten, is this ok??
@@ -33,7 +34,7 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     // Loop over sizeof(elem)/lgH
     // for (int i_cpu = 0; i_cpu < sizeof(uint32_t)/lgH; i_cpu++) {
         // globla_hist[blocks][H]
-    histogramKernel<Q, H><<<blocks, B>>>(d_ind, glbHist, N, i_cpu)
+    histogramKernel<Q, H, CHUNK><<<blocks, B>>>(d_A, glbHist, N, i_cpu);
         // Pseudo - use kernels from assignments
         // transpose_hist()
         // scan_hist()
@@ -44,14 +45,14 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
 
     // }
 
-    uint32_t *hist_h = malloc(sizeof(uint32_t)*blocks*H);
+    uint32_t *hist_h = (uint32_t *)malloc(sizeof(uint32_t)*blocks*H);
     cudaMemcpy(hist_h, glbHist, blocks*H, cudaMemcpyDeviceToHost);
 
     for (int i = 0; i < blocks; i++) {
         for (int j = 0; j < H; j++) {
             printf("%d ", hist_h[i*blocks + j]);
         }
-        printf("\n");
+        printf("\n"); 
     }
     
 }

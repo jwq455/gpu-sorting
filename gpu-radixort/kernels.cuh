@@ -1,7 +1,9 @@
 #ifndef RADIX_KERS 
 #define RADIX_KERS
 
-#define GET_BITS(a, h, iter) ((1<<h)-1) & (a>>(iter*h))
+#include <cuda_runtime.h>
+
+#define GET_BITS(a, h, iter) (h-1) & (a>>(iter*h))
 
 template<class T, uint32_t CHUNK>
 __device__ inline void
@@ -22,26 +24,25 @@ copyFromShr2GlbMem( const uint32_t glb_offs
     __syncthreads(); // leave this here at the end!
 }
 
-template<int Q, int H>
+template<int Q, int H, int CHUNK>
 __global__ void
 histogramKernel(uint32_t *arr,
                 uint32_t *glbHist,
                 size_t N,
-                int bits_iter);
+                int bits_iter)
 {
     __shared__ uint32_t histShr[H];
-    uint32_t block_offset = blockdim.x*blockidx.x;
-    uint32_t arr_idx = block_offset + g*blockdim.x + threadidx.x;
+    uint32_t block_offset = blockDim.x * blockIdx.x;
     uint32_t key_idx;
     for (int q = 0; q < Q; q++) {
+        uint32_t arr_idx = block_offset + q * blockDim.x + threadIdx.x;
         if (arr_idx<N) {
-            key_idx = GET_BITS(arr[arr_idx], lgH, bits_iter);
+            key_idx = GET_BITS(arr[arr_idx], H, bits_iter);
             atomicAdd(&histShr[key_idx], 1);
         }
     }
     __syncthreads();
-    uint32_t chunk = (H + blockdim.x - 1) / blockdim.x;
-    copyFromShr2GlbMem<uint32_t, chunk>(block_offset, N, glbHist, histShr);
+    copyFromShr2GlbMem<uint32_t, CHUNK>(block_offset, N, glbHist, histShr);
 }
 
 
