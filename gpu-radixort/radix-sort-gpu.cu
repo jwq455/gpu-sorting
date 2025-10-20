@@ -81,10 +81,10 @@ void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
 
     // CHANGE TO MEMORY BOUND PERFORMANCE ANALYSIS
     double  microsecPerSort = elapsed;
-    double flopsPerMatrixMul = 3.0 * M * K * K * N;
-    double gigaFlops = (flopsPerMatrixMul * 1.0e-3f) / microsecPerSort>
+    // double flopsPerMatrixMul = 3.0 * M * K * K * N;
+    // double gigaFlops = (flopsPerMatrixMul * 1.0e-3f) / microsecPerSort>
 
-    gpuAssert( cudaPeekAtLastError() );
+    // gpuAssert( cudaPeekAtLastError() );
 
     // Print and validate :)
     
