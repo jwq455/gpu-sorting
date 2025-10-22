@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define GET_BITS(a, h, iter) ((1<<h)-1) & (a>>(iter*h))
+#define GET_BITS(a, mask, shift) ((1<<mask)-1) & (a>>(shift*mask))
 
 
 int main() {
