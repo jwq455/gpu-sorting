@@ -1,9 +1,10 @@
-#ifndef RADIX_KERS 
+#ifndef RADIX_KERS
 #define RADIX_KERS
 
 #include <cuda_runtime.h>
 
 #define GET_BITS(a, mask, shift) ((1<<mask)-1) & (a>>(shift*mask))
+
 
 template<int H, int CHUNK>
 __device__ inline void
@@ -16,28 +17,35 @@ copyFromShr2Glb(const uint32_t glb_offset,
     for (uint32_t i = 0; i < CHUNK; i++) {
         uint32_t loc_ind = threadIdx.x + H * i;
         uint32_t glb_ind = glb_offset + loc_ind;
-    }
-}
-
-// !!! ASSUMES THAT len(d_out)> len(shmem_red) OTHERWISE IT FAILS
-template<class T, uint32_t CHUNK>
-__device__ inline void
-copyFromShr2GlbMem( const uint32_t glb_offs
-                  , const uint32_t N
-                  , T* d_out
-                  , volatile T* shmem_red
-) {
-    #pragma unroll
-    for (uint32_t i = 0; i < CHUNK; i++) {
-        uint32_t loc_ind = threadIdx.x + blockDim.x * i;
-        uint32_t glb_ind = glb_offs + loc_ind;
-        if (glb_ind < N) {
-            T elm = const_cast<const T&>(shmem_red[loc_ind]);
+        if (glb_ind < size_glb) {
+            uint32_t elm = const_cast<const uint32_t&>(shmem[loc_ind]);
             d_out[glb_ind] = elm;
         }
     }
-    __syncthreads(); // leave this here at the end!
+    __syncthreads();
 }
+
+// From assignment 3-4 - gpu-coalecing
+template <class ElTp, int T>
+__global__ void
+coalsTransposeKer(ElTp* A, ElTp* B, int heightA, int widthA) {
+  __shared__ ElTp tile[T][T+1];
+
+  int x = blockIdx.x * T + threadIdx.x;
+  int y = blockIdx.y * T + threadIdx.y;
+
+  if( x < widthA && y < heightA )
+      tile[threadIdx.y][threadIdx.x] = A[y*widthA + x];
+
+  __syncthreads();
+
+  x = blockIdx.y * T + threadIdx.x;
+  y = blockIdx.x * T + threadIdx.y;
+
+  if( x < heightA && y < widthA )
+      B[y*heightA + x] = tile[threadIdx.x][threadIdx.y];
+}
+
 
 template<int B, int Q, int lgH, int H, int CHUNK>
 __global__ void
@@ -58,19 +66,11 @@ histogramKernel(uint32_t *arr,
         uint32_t arr_idx = block_offset + q * blockDim.x + threadIdx.x;
         if (arr_idx<N) {
             key_idx = GET_BITS(arr[arr_idx], lgH, bits_iter);
-//            if (blockIdx.x==1) printf("KeyIdx: %d\n", key_idx);
             atomicAdd(&histShr[key_idx], 1);
         }
     }
     __syncthreads();
-    if (threadIdx.x==1 && blockIdx.x==1) {
-        printf("Block %d Shared Historgram:\n", blockIdx.x);
-        for (int i = 0; i < H; i++) {
-            printf("%d ", histShr[i]);
-        }
-        printf("\n");
-    }
-    copyFromShr2GlbMem<uint32_t, CHUNK>(blockIdx.x*H, blockDim.x*H, glbHist, histShr);
+    copyFromShr2Glb<H, CHUNK>(blockIdx.x*H, blockDim.x*H, glbHist, histShr);
 }
 
 

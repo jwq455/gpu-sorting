@@ -1,18 +1,87 @@
 #include "../helper.h"
 #include "kernels.cuh"
+#include "pbb_kernels.cuh"
+#include "constants.cuh"
 
 using namespace std;
 
 #define GPU_RUNS    50
 
+#define TILE_SIZE 32
+
+
+// FROM ASSIGNMENT 2
+uint32_t nextMul32(uint32_t x) {
+    return ((x + 31) / 32) * 32;
+}
+
+/**
+ * FROM ASSIGNMENT 2 - NUMBER OF BLOCKS FOR SCAN!
+ * `N` is the input-array length
+ * `B` is the CUDA block size
+ * This function attempts to virtualize the computation so
+ *   that it spawns at most 1024 CUDA blocks; otherwise an
+ *   error is thrown. It should not throw an error for any
+ *   B >= 64.
+ * The return is the number of blocks, and `CHUNK * (*num_chunks)`
+ *   is the number of elements to be processed sequentially by
+ *   each thread so that the number of blocks is <= 1024.
+ */
+template<int CHUNK>
+uint32_t getNumBlocks(const uint32_t N, const uint32_t B, uint32_t* num_chunks) {
+    const uint32_t max_inp_thds = (N + CHUNK - 1) / CHUNK;
+    const uint32_t num_thds0    = min(max_inp_thds, MAX_HWDTH);
+
+    const uint32_t min_elms_all_thds = num_thds0 * CHUNK;
+    *num_chunks = max(1, (N + min_elms_all_thds - 1) / min_elms_all_thds);
+
+    const uint32_t seq_chunk = (*num_chunks) * CHUNK;
+    const uint32_t num_thds = (N + seq_chunk - 1) / seq_chunk;
+    const uint32_t num_blocks = (num_thds + B - 1) / B;
+
+    if(num_blocks <= MAX_BLOCK) {
+        return num_blocks;
+    } else {
+        //printf("Warning: reduce/scan configuration does not allow the maximal concurrency supported by hardware.\n");
+        const uint32_t num_blocks = 1024;
+        const uint32_t num_thds   = num_blocks * B;
+        const uint32_t num_conc_elems = num_thds * CHUNK;
+        *num_chunks = (N + num_conc_elems - 1) / num_conc_elems;
+        return num_blocks;
+    }
+}
+
 template<int B, int Q, int lgH>
 void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     unsigned long elementsPerBlock = B*Q;
     // Setup execution parameters
+
+    // For histogram kernel
     const int blocks = (N + elementsPerBlock - 1) / elementsPerBlock;
     const int H = 1<<lgH;
     const int CHUNK = (H + B - 1) / B;
     const int passes = (sizeof(uint32_t)*8)/lgH;
+    const int glbHistSize = blocks*H;
+    const int glbHistMemSize = sizeof(uint32_t)*glbHistSize;
+
+    // For transpose kernel
+    int  dimy = (blocks+TILE_SIZE-1) / TILE_SIZE;
+    int  dimx = (H+TILE_SIZE-1) / TILE_SIZE;
+    dim3 block(TILE_SIZE, TILE_SIZE, 1);
+    dim3 grid (dimx, dimy, 1);
+
+    // For scan kernel
+    // COPIED from scaninc() in host_skel.cuh assignment-2
+    const uint32_t inp_sz = sizeof(uint32_t);
+    const uint32_t red_sz = sizeof(uint32_t);
+    const uint32_t max_tp_size = (inp_sz > red_sz) ? inp_sz : red_sz;
+    const uint32_t CHUNK_SCAN = ELEMS_PER_THREAD*4 / max_tp_size;
+    uint32_t num_seq_chunks;
+    const uint32_t num_blocks = getNumBlocks<CHUNK>(glbHistSize, B, &num_seq_chunks);
+    const size_t   shmem_size = B * max_tp_size * CHUNK_SCAN;
+
+    //
+
 
     printf("CHUNK: %d\n", CHUNK);
     printf("Blocks: %d\n", blocks);
@@ -31,36 +100,57 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
 
     // global Historgram buffer
     uint32_t *glbHist;
-    cudaMalloc((void **) &glbHist, sizeof(uint32_t)*blocks*H);
+    uint32_t *glbHist_tr;
+    uint32_t *glbHist_scan;
+    uint32_t *glbHist_scan_tr;
+    cudaMalloc((void **) &glbHist, glbHistMemSize);
+    cudaMalloc((void **) &glbHist_tr, glbHistMemSize);
+    cudaMalloc((void **) &glbHist_scan, glbHistMemSize);
+    cudaMalloc((void **) &glbHist_scan_tr, glbHistMemSize);
 
-    uint32_t *hist_h = (uint32_t *)malloc(sizeof(uint32_t)*blocks*H);
-    int cnt = 0;
+    uint32_t* d_tmp;
+    cudaMalloc((void**)&d_tmp, MAX_BLOCK*sizeof(uint32_t));
 
+    uint32_t *h_G = (uint32_t *)malloc(glbHistMemSize);
+    uint32_t *h_G_tr = (uint32_t *)malloc(glbHistMemSize);
+    uint32_t *h_G_scan = (uint32_t *)malloc(glbHistMemSize);
 
     // Loop over sizeof(elem)/lgH
     for (int i_cpu = 0; i_cpu < passes; i_cpu++) {
         // globla_hist[blocks][H]
-        cudaMemset(glbHist, 0, sizeof(uint32_t)*blocks*H);
-        memset(hist_h, 0, sizeof(uint32_t)*blocks*H);
         histogramKernel<B, Q, lgH, H, CHUNK><<<blocks, B>>>(d_A, glbHist, N, i_cpu);
-        // Pseudo - use kernels from assignments
-        // transpose_hist()
-        // scan_hist()
-        // transpose_scan()
-        // Second kernel - Does sorting and scattering into global memory
-        cnt = 0;
-        // Update d_ind = d_out
-        cudaMemcpy(hist_h, glbHist, sizeof(uint32_t)*blocks*H, cudaMemcpyDeviceToHost);
-//        printf("Histogram %d\n", i_cpu);
-        for (int i = 0; i < blocks; i++) {
-//            printf("Block %d\n", i);
-            for (int j = 0; j < H; j++) {
-                cnt += hist_h[i*blocks + j];
-//                printf("%d ", hist_h[i*blocks + j]);
+        // tanspose
+        coalsTransposeKer<uint32_t,TILE_SIZE> <<<grid, block>>>
+                        (glbHist, glbHist_tr, blocks, H);
+        // scan
+        {
+            redAssocKernel<Add<uint32_t>, CHUNK_SCAN><<< num_blocks, B, shmem_size >>>(d_tmp, glbHist_tr, glbHistSize, num_seq_chunks);
+
+            {
+                const uint32_t block_size = nextMul32(num_blocks);
+                const size_t shmem_size = block_size * sizeof(uint32_t);
+                scan1Block<Add<uint32_t>><<< 1, block_size, shmem_size>>>(d_tmp, num_blocks);
             }
-//            printf("\n");
+
+            scan3rdKernel<Add<uint32_t>, CHUNK_SCAN><<< num_blocks, B, shmem_size >>>(glbHist_scan, glbHist_tr, d_tmp, glbHistSize, num_seq_chunks);
         }
-        printf("%s - cnt=%d\n", (cnt==N) ? "VALID" : "INVALID", cnt);
+        // transpose
+        coalsTransposeKer<uint32_t,TILE_SIZE> <<<grid, block>>>
+                        (glbHist_scan, glbHist_scan_tr, H, blocks);
+        // Second kernel - Does sorting and scattering into global memory
+        // Update d_ind = d_out
+
+        cudaMemcpy(h_G, glbHist, glbHistMemSize, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_G_tr, glbHist_tr, glbHistMemSize, cudaMemcpyDeviceToHost);
+        cudaMemcpy(h_G_scan, glbHist_scan, glbHistMemSize, cudaMemcpyDeviceToHost);
+        validateTranspose(h_G, h_G_tr, blocks, H);
+    }
+    printf("Histogram scanned:\n");
+    for (int i = 0; i < H; i++) {
+        for (int j = 0; j < blocks; j++) {
+            printf("%u ", h_G_scan[i*blocks + j]);
+        }
+        printf("\n");
     }
 }
 
@@ -106,15 +196,15 @@ void runAll(size_t N) {
     uint32_t *h_B = (uint32_t*)calloc(N, sizeof(uint32_t));
 
     // Initialize input array
-    // randomInit<uint32_t>(h_A, N);
+//    randomInit<uint32_t>(h_A, N);
     for (uint32_t i = 0; i < N; i++) {
-        h_A[i] = (i+1) % 256;
+        h_A[i] = i % 256;
     }
 
     //printf("Array A:\n");
     //for (int i = 0; i < N; i++) {
     //    printf("%d ", h_A[i]);
-   // }
+    //}
     //printf("\n");
 
     // Allocate device memory
@@ -145,6 +235,10 @@ int main(int argc, char *argv[]) {
         printf("Usage: %s size-A\n", argv[0]);
         exit(1);
     }
+
+    cudaSetDevice(1);
+    initHwd();
+
     const size_t SIZE_A = atoi(argv[1]);
 
     const int B     = 256; // Thread-block size
