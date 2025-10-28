@@ -1,7 +1,5 @@
 #include "../helper.h"
 #include "kernels.cuh"
-#include "pbb_kernels.cuh"
-#include "constants.cuh"
 
 using namespace std;
 
@@ -69,6 +67,7 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     int  dimx = (H+TILE_SIZE-1) / TILE_SIZE;
     dim3 block(TILE_SIZE, TILE_SIZE, 1);
     dim3 grid (dimx, dimy, 1);
+    dim3 grid2 (dimy, dimx, 1);
 
     // For scan kernel
     // COPIED from scaninc() in host_skel.cuh assignment-2
@@ -82,21 +81,8 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
 
     //
 
-
-    printf("CHUNK: %d\n", CHUNK);
-    printf("Blocks: %d\n", blocks);
-    // Temporary I/O buffers
-    // we use d_A - will be overwritten, is this ok??
-
-    // uint32_t *d_ind;
-    // cudaMalloc((void **) &d_ind, N);
-    // cudaMemcpy(d_ind, d_A, N, cudaMemcpyDeviceToDevice);
-
-    // We use d_B
-
-    // uint32_t *d_out;
-    // cudaMalloc((void **) &d_out, N);
-    // cudaMemset(d_out, 0, N);
+    // printf("CHUNK: %d\n", CHUNK);
+    // printf("Blocks: %d\n", blocks);
 
     // global Historgram buffer
     uint32_t *glbHist;
@@ -111,14 +97,11 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     uint32_t* d_tmp;
     cudaMalloc((void**)&d_tmp, MAX_BLOCK*sizeof(uint32_t));
 
-    uint32_t *h_G = (uint32_t *)malloc(glbHistMemSize);
-    uint32_t *h_G_tr = (uint32_t *)malloc(glbHistMemSize);
-    uint32_t *h_G_scan = (uint32_t *)malloc(glbHistMemSize);
-
     // Loop over sizeof(elem)/lgH
     for (int i_cpu = 0; i_cpu < passes; i_cpu++) {
         // globla_hist[blocks][H]
         histogramKernel<B, Q, lgH, H, CHUNK><<<blocks, B>>>(d_A, glbHist, N, i_cpu);
+
         // tanspose
         coalsTransposeKer<uint32_t,TILE_SIZE> <<<grid, block>>>
                         (glbHist, glbHist_tr, blocks, H);
@@ -134,24 +117,22 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
 
             scan3rdKernel<Add<uint32_t>, CHUNK_SCAN><<< num_blocks, B, shmem_size >>>(glbHist_scan, glbHist_tr, d_tmp, glbHistSize, num_seq_chunks);
         }
-        // transpose
-        coalsTransposeKer<uint32_t,TILE_SIZE> <<<grid, block>>>
-                        (glbHist_scan, glbHist_scan_tr, H, blocks);
-        // Second kernel - Does sorting and scattering into global memory
-        // Update d_ind = d_out
 
-        cudaMemcpy(h_G, glbHist, glbHistMemSize, cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_G_tr, glbHist_tr, glbHistMemSize, cudaMemcpyDeviceToHost);
-        cudaMemcpy(h_G_scan, glbHist_scan, glbHistMemSize, cudaMemcpyDeviceToHost);
-        validateTranspose(h_G, h_G_tr, blocks, H);
+        // transpose
+        coalsTransposeKer<uint32_t,TILE_SIZE> <<<grid2, block>>>
+                        (glbHist_scan, glbHist_scan_tr, H, blocks);
+
+        // Second kernel - Does sorting and scattering into global memory
+        partitionScatterKer<B, Q, lgH><<<blocks, B>>>(d_A, N, glbHist, glbHist_scan_tr, d_B, i_cpu);
+
+        // Update d_ind = d_out
+        cudaMemcpy(d_A, d_B, sizeof(uint32_t)*N, cudaMemcpyDeviceToDevice);
     }
-    printf("Histogram scanned:\n");
-    for (int i = 0; i < H; i++) {
-        for (int j = 0; j < blocks; j++) {
-            printf("%u ", h_G_scan[i*blocks + j]);
-        }
-        printf("\n");
-    }
+
+    cudaFree(glbHist);
+    cudaFree(glbHist_tr);
+    cudaFree(glbHist_scan);
+    cudaFree(glbHist_scan_tr);
 }
 
 template<int B, int Q, int lgH>
@@ -161,29 +142,37 @@ void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     cudaDeviceSynchronize();
     gpuAssert( cudaPeekAtLastError() );
 
+    double elapsed;
+    struct timeval t_start, t_end, t_diff;
+    gettimeofday(&t_start, NULL);
 
-    //double elapsed;
-    //struct timeval t_start, t_end, t_diff;
-    //gettimeofday(&t_start, NULL);
+    for(int i=0; i<GPU_RUNS; i++) {
+         radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
+    }
+    cudaDeviceSynchronize();
 
-//    for(int i=0; i<GPU_RUNS; i++) {
-        // IMPLEMENT RADIX SORT!
+    gettimeofday(&t_end, NULL);
+    timeval_subtract(&t_diff, &t_end, &t_start);
+    elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec) / ((double)GPU_RUNS);
 
-  //  }
-    //cudaDeviceSynchronize();
+    // CHECK MEMORY BOUND PERFORMANCE ANALYSIS!
+    // double gigaBytesPerSec = N * sizeof(uint32_t) * 1.0e-3f / elapsed;
+    printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
+    // printf("Radix sort of uint32_t GPU runs in: %.2f microsecs, GB/sec: %.2f\n"
+    //           , elapsed, gigaBytesPerSec);
 
-//    gettimeofday(&t_end, NULL);
-//    timeval_subtract(&t_diff, &t_end, &t_start);
-//    elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec) / GPU_RUNS;
-
-    // CHANGE TO MEMORY BOUND PERFORMANCE ANALYSIS
-//    double  microsecPerSort = elapsed;
-    // double flopsPerMatrixMul = 3.0 * M * K * K * N;
-    // double gigaFlops = (flopsPerMatrixMul * 1.0e-3f) / microsecPerSort>
-
-    // gpuAssert( cudaPeekAtLastError() );
+    gpuAssert( cudaPeekAtLastError() );
 
     // Print and validate :)
+    printf("Validating result... ");
+    cudaMemcpy(h_B, d_B, sizeof(uint32_t)*N, cudaMemcpyDeviceToHost);
+    validate<uint32_t>(h_B, N);
+
+    printf("Array B:\n");
+    for (int i = 0; i < 10000; i++) {
+       printf("%d ", h_B[i]);
+    }
+    printf("\n");
 
 }
 
@@ -196,16 +185,16 @@ void runAll(size_t N) {
     uint32_t *h_B = (uint32_t*)calloc(N, sizeof(uint32_t));
 
     // Initialize input array
-//    randomInit<uint32_t>(h_A, N);
-    for (uint32_t i = 0; i < N; i++) {
-        h_A[i] = i % 256;
-    }
+    randomInit<uint32_t>(h_A, N);
+    // for (uint32_t i = 0; i < N; i++) {
+    //     h_A[i] = i % 256;
+    // }
 
-    //printf("Array A:\n");
-    //for (int i = 0; i < N; i++) {
+    // printf("Array A:\n");
+    // for (int i = 0; i < N; i++) {
     //    printf("%d ", h_A[i]);
-    //}
-    //printf("\n");
+    // }
+    // printf("\n");
 
     // Allocate device memory
     uint32_t *d_A;
