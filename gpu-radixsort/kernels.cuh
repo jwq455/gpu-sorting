@@ -10,6 +10,7 @@
 #define GET_KTH_BIT_UNSET(a, i, lgH, k) (1) ^ ((1) & (a>>(i*lgH+k))) 
 
 
+// Rewrite such that you don't need CHUNK
 template<int H, int CHUNK>
 __device__ inline void
 copyFromShr2Glb(const uint32_t glb_offset,
@@ -216,6 +217,7 @@ partitionScatterKer(uint32_t *d_ind,
     int block_offset = blockIdx.x * B*Q;
 
     for (int k = 0; k < lgH; k++) {
+        // last iteration we need to copy elements into shared memory differently, such that -! I DON'T UNDERSTAND THIS NOT SURE !-
         copyFromShr2Reg<Q>(regElem, elemShr);
         __syncthreads();
 
@@ -265,6 +267,20 @@ partitionScatterKer(uint32_t *d_ind,
 
     const int H = 1<<lgH;
     const int chunk = (H+B-1) / B;
+
+    // You only need two the scanned histogram and one for the original histogram
+    /*
+    (histo_scan[blockixd][bin] - histo_orig[blockixd][bin]) + (g*B+threadIdx.x - histo_orig_exc_scan[blockixd][bin])
+
+    = histo_scan[blockixd][bin] + g*B+threadIdx.x - histo_orig[blockixd][bin] - histo_orig_exc_scan[blockixd][bin]
+
+    //
+        histo_orig[blockixd][bin] + histo_orig_exc_scan[blockixd][bin] = histo_orig_inc_scan[blockixd][bin]
+    //
+
+    = histo_scan[blockixd][bin] + g*B+threadIdx.x - histo_orig_inc_scan[blockixd][bin]
+    
+    */
 
     __shared__ uint32_t hist_orig[H];
     __shared__ uint32_t hist_orig_scan[H];

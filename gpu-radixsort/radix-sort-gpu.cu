@@ -50,7 +50,7 @@ uint32_t getNumBlocks(const uint32_t N, const uint32_t B, uint32_t* num_chunks) 
 }
 
 template<int B, int Q, int lgH>
-void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
+double radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     unsigned long elementsPerBlock = B*Q;
     // Setup execution parameters
 
@@ -59,8 +59,8 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     const int H = 1<<lgH;
     const int CHUNK = (H + B - 1) / B;
     const int passes = (sizeof(uint32_t)*8)/lgH;
-    const int glbHistSize = blocks*H;
-    const int glbHistMemSize = sizeof(uint32_t)*glbHistSize;
+    const int hist_size = blocks*H;
+    const int hist_mem_size = sizeof(uint32_t)*hist_size;
 
     // For transpose kernel
     int  dimy = (blocks+TILE_SIZE-1) / TILE_SIZE;
@@ -74,7 +74,7 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     const uint32_t tp_size = sizeof(uint32_t);
     const uint32_t CHUNK_SCAN = ELEMS_PER_THREAD*4 / tp_size;
     uint32_t num_seq_chunks;
-    const uint32_t num_blocks = getNumBlocks<CHUNK>(glbHistSize, B, &num_seq_chunks);
+    const uint32_t num_blocks = getNumBlocks<CHUNK_SCAN>(hist_size, B, &num_seq_chunks);
     const size_t   shmem_size = B * tp_size * CHUNK_SCAN;
 
     //
@@ -82,30 +82,47 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     // printf("CHUNK: %d\n", CHUNK);
     // printf("Blocks: %d\n", blocks);
 
+    // Meassuring performance should not contain all the memory allocation
+    // double elapsed;
+    // struct timeval t_start, t_end, t_diff;
+    // gettimeofday(&t_start, NULL);
+
+    // you need three buffers for the input/output -> first iter reads from d_A, writes to d_B, then write d_b into d_ind (third iteration)
+    uint32_t *tmp_inp;
+    uint32_t *tmp_out = d_B;
+    cudaMalloc((void **) &tmp_inp, sizeof(uint32_t)*N);
+    cudaMemcpy(tmp_inp, d_A, sizeof(uint32_t)*N, cudaMemcpyDeviceToDevice);
+    uint32_t *sort_mem_ptr = tmp_inp;
+
     // global Historgram buffer
-    uint32_t *glbHist;
-    uint32_t *glbHist_tr;
-    uint32_t *glbHist_scan;
-    uint32_t *glbHist_scan_tr;
-    cudaMalloc((void **) &glbHist, glbHistMemSize);
-    cudaMalloc((void **) &glbHist_tr, glbHistMemSize);
-    cudaMalloc((void **) &glbHist_scan, glbHistMemSize);
-    cudaMalloc((void **) &glbHist_scan_tr, glbHistMemSize);
+    uint32_t *hist;
+    uint32_t *hist_tr;
+    uint32_t *hist_scan;
+    uint32_t *hist_scan_tr;
+    cudaMalloc((void **) &hist, hist_mem_size);
+    cudaMalloc((void **) &hist_tr, hist_mem_size);
+    cudaMalloc((void **) &hist_scan, hist_mem_size);
+    cudaMalloc((void **) &hist_scan_tr, hist_mem_size);
 
     uint32_t* d_tmp;
     cudaMalloc((void**)&d_tmp, MAX_BLOCK*sizeof(uint32_t));
 
+    // Test runtime - should be measured from here
+    double elapsed;
+    struct timeval t_start, t_end, t_diff;
+    gettimeofday(&t_start, NULL);
+
     // Loop over sizeof(elem)/lgH
     for (int i_cpu = 0; i_cpu < passes; i_cpu++) {
         // globla_hist[blocks][H]
-        histogramKernel<B, Q, lgH, H, CHUNK><<<blocks, B>>>(d_A, glbHist, N, i_cpu);
+        histogramKernel<B, Q, lgH, H, CHUNK><<<blocks, B>>>(sort_mem_ptr, hist, N, i_cpu);
 
         // tanspose
         coalsTransposeKer<uint32_t,TILE_SIZE> <<<grid, block>>>
-                        (glbHist, glbHist_tr, blocks, H);
+                        (hist, hist_tr, blocks, H);
         // scan
         {
-            redAssocKernel<Add<uint32_t>, CHUNK_SCAN><<< num_blocks, B, shmem_size >>>(d_tmp, glbHist_tr, glbHistSize, num_seq_chunks);
+            redAssocKernel<Add<uint32_t>, CHUNK_SCAN><<< num_blocks, B, shmem_size >>>(d_tmp, hist_tr, hist_size, num_seq_chunks);
 
             {
                 const uint32_t block_size = nextMul32(num_blocks);
@@ -113,58 +130,104 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
                 scan1Block<Add<uint32_t>><<< 1, block_size, shmem_size>>>(d_tmp, num_blocks);
             }
 
-            scan3rdKernel<Add<uint32_t>, CHUNK_SCAN><<< num_blocks, B, shmem_size >>>(glbHist_scan, glbHist_tr, d_tmp, glbHistSize, num_seq_chunks);
+            scan3rdKernel<Add<uint32_t>, CHUNK_SCAN><<< num_blocks, B, shmem_size >>>(hist_scan, hist_tr, d_tmp, hist_size, num_seq_chunks);
         }
 
         // transpose
         coalsTransposeKer<uint32_t,TILE_SIZE> <<<grid2, block>>>
-                        (glbHist_scan, glbHist_scan_tr, H, blocks);
+                        (hist_scan, hist_scan_tr, H, blocks);
 
         // Second kernel - Does sorting and scattering into global memory
-        partitionScatterKer<B, Q, lgH><<<blocks, B>>>(d_A, N, glbHist, glbHist_scan_tr, d_B, i_cpu);
+        partitionScatterKer<B, Q, lgH><<<blocks, B>>>(sort_mem_ptr, N, hist, hist_scan_tr, tmp_out, i_cpu);
 
         // Update d_ind = d_out
-        cudaMemcpy(d_A, d_B, sizeof(uint32_t)*N, cudaMemcpyDeviceToDevice);
+        // pointer swap - DON'T MEMCPY
+        tmp_inp = sort_mem_ptr;
+        sort_mem_ptr = tmp_out;
+        tmp_out = tmp_inp;
     }
 
-    cudaFree(glbHist);
-    cudaFree(glbHist_tr);
-    cudaFree(glbHist_scan);
-    cudaFree(glbHist_scan_tr);
+    cudaMemcpy(d_B, sort_mem_ptr, sizeof(uint32_t)*N, cudaMemcpyDeviceToDevice);
+
+    // To here
+    gettimeofday(&t_end, NULL);
+    timeval_subtract(&t_diff, &t_end, &t_start);
+    elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec);
+
+    // printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
+
+    cudaFree(hist);
+    cudaFree(hist_tr);
+    cudaFree(hist_scan);
+    cudaFree(hist_scan_tr);
+
+    return elapsed;
 }
 
 template<int B, int Q, int lgH>
 void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
+    double elapsed = 0;
     // dry run
     radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
     cudaDeviceSynchronize();
     gpuAssert( cudaPeekAtLastError() );
 
-    double elapsed;
-    struct timeval t_start, t_end, t_diff;
-    gettimeofday(&t_start, NULL);
+    // printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
+
+    // uint32_t *arr_inp = (uint32_t *)malloc(sizeof(uint32_t)*N);
+    // cudaMemcpy(arr_inp, d_A, sizeof(uint32_t)*N, cudaMemcpyDeviceToHost);
+    
+    // printf("input array after sort:\n");
+    // for (int i = 0; i < N; i++) {
+    //     printf("%d ", arr_inp[i]);
+    // }
+    // printf("\n\n");
+
+    // double elapsed;
+    // struct timeval t_start, t_end, t_diff;
+    // gettimeofday(&t_start, NULL);
+
+    // radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
 
     for(int i=0; i<GPU_RUNS; i++) {
-         radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
+         elapsed += radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
     }
     cudaDeviceSynchronize();
 
-    gettimeofday(&t_end, NULL);
-    timeval_subtract(&t_diff, &t_end, &t_start);
-    elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec) / ((double)GPU_RUNS);
+    // gettimeofday(&t_end, NULL);
+    // timeval_subtract(&t_diff, &t_end, &t_start);
+    // elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec) / ((double)GPU_RUNS);
+    // elapsed = elapsed / ((double)GPU_RUNS);
 
-    // CHECK MEMORY BOUND PERFORMANCE ANALYSIS!
-    // double gigaBytesPerSec = N * sizeof(uint32_t) * 1.0e-3f / elapsed;
-    printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
-    // printf("Radix sort of uint32_t GPU runs in: %.2f microsecs, GB/sec: %.2f\n"
-    //           , elapsed, gigaBytesPerSec);
+    // // CHECK MEMORY BOUND PERFORMANCE ANALYSIS!
+    // // double gigaBytesPerSec = N * sizeof(uint32_t) * 1.0e-3f / elapsed;
+    // printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
+    // // printf("Radix sort of uint32_t GPU runs in: %.2f microsecs, GB/sec: %.2f\n"
+    // //           , elapsed, gigaBytesPerSec);
 
-    gpuAssert( cudaPeekAtLastError() );
+    // gpuAssert( cudaPeekAtLastError() );
+    printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed / ((double)GPU_RUNS), (N/(elapsed/1e6)));
 
-    // Print and validate :)
+    // // Print and validate :)
     printf("Validating result... ");
     cudaMemcpy(h_B, d_B, sizeof(uint32_t)*N, cudaMemcpyDeviceToHost);
     validate<uint32_t>(h_B, N);
+
+    // printf("sorted array after sort:\n");
+    // for (int i = 0; i < N; i++) {
+    //     printf("%d ", h_B[i]);
+    // }
+    // printf("\n");
+
+    // printf("Sorted array:\n");
+    // for (int i = 0; i < 3000; i++) {
+    //     printf("%d ", h_B[i]);
+    // }
+    // printf("\n\n");
+    // for (int i = N-3000; i < N; i++) {
+    //     printf("%d ", h_B[i]);
+    // }
+    // printf("\n\n");
 
 }
 
