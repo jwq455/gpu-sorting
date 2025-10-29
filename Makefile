@@ -31,4 +31,4 @@ run_cub: $(EXEC_CUB)
 	./$(EXEC_CUB) 100000000
 
 clean:
-	rm -f $(EXEC_CPU) $(EXEC_GPU)
+	rm -f $(EXEC_RADIX) $(EXEC_CUB)
