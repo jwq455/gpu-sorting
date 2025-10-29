@@ -140,45 +140,31 @@ void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     cudaDeviceSynchronize();
     gpuAssert( cudaPeekAtLastError() );
 
-    // double elapsed;
-    // struct timeval t_start, t_end, t_diff;
-    // gettimeofday(&t_start, NULL);
+    double elapsed;
+    struct timeval t_start, t_end, t_diff;
+    gettimeofday(&t_start, NULL);
 
-    // for(int i=0; i<GPU_RUNS; i++) {
-    //      radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
-    // }
-    // cudaDeviceSynchronize();
+    for(int i=0; i<GPU_RUNS; i++) {
+         radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
+    }
+    cudaDeviceSynchronize();
 
-    // gettimeofday(&t_end, NULL);
-    // timeval_subtract(&t_diff, &t_end, &t_start);
-    // elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec) / ((double)GPU_RUNS);
+    gettimeofday(&t_end, NULL);
+    timeval_subtract(&t_diff, &t_end, &t_start);
+    elapsed = (t_diff.tv_sec*1e6+t_diff.tv_usec) / ((double)GPU_RUNS);
 
-    // // CHECK MEMORY BOUND PERFORMANCE ANALYSIS!
-    // // double gigaBytesPerSec = N * sizeof(uint32_t) * 1.0e-3f / elapsed;
-    // printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
-    // // printf("Radix sort of uint32_t GPU runs in: %.2f microsecs, GB/sec: %.2f\n"
-    // //           , elapsed, gigaBytesPerSec);
+    // CHECK MEMORY BOUND PERFORMANCE ANALYSIS!
+    // double gigaBytesPerSec = N * sizeof(uint32_t) * 1.0e-3f / elapsed;
+    printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
+    // printf("Radix sort of uint32_t GPU runs in: %.2f microsecs, GB/sec: %.2f\n"
+    //           , elapsed, gigaBytesPerSec);
 
-    // gpuAssert( cudaPeekAtLastError() );
+    gpuAssert( cudaPeekAtLastError() );
 
     // Print and validate :)
-
-
-    // !!! VALID with N=1.441.792 INVALID with N=1.441.793 !!!
-    // 
-    // When N=1.441.792 B=256, Q=22, BLOCK_SIZE=5632, NUMBER_OF_BLOCKS=1.441.792/5632=256=B
-    // When N=1.441.793, -//- , NUMBER_OF_BLOCKS=1.441.792/5632=256.000177~257
-    // Perhaps something todo with using B as NUMBER_OF_BLOCKS somewhere?? 
-    // 
     printf("Validating result... ");
     cudaMemcpy(h_B, d_B, sizeof(uint32_t)*N, cudaMemcpyDeviceToHost);
     validate<uint32_t>(h_B, N);
-
-    printf("Array B:\n");
-    for (int i = 0; i < 10000; i++) {
-       printf("%d ", h_B[i]);
-    }
-    printf("\n");
 
 }
 

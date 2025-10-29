@@ -170,17 +170,17 @@ histogramKernel(uint32_t *arr,
     // Not sure this sync has to be here
     __syncthreads();
 
-    uint32_t block_offset = blockDim.x * blockIdx.x * Q;
+    uint32_t block_offset =  blockIdx.x * B*Q;
     uint32_t key_idx;
     for (int q = 0; q < Q; q++) {
-        uint32_t arr_idx = block_offset + q * blockDim.x + threadIdx.x;
+        uint32_t arr_idx = block_offset + q * B + threadIdx.x;
         if (arr_idx<N) {
             key_idx = GET_BITS(arr[arr_idx], lgH, bits_iter);
             atomicAdd(&histShr[key_idx], 1);
         }
     }
     __syncthreads();
-    copyFromShr2Glb<H, CHUNK>(blockIdx.x*H, blockDim.x*H, glbHist, histShr);
+    copyFromShr2Glb<H, CHUNK>(blockIdx.x*H, gridDim.x*H, glbHist, histShr);
 }
 
 

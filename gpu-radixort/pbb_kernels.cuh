@@ -178,6 +178,7 @@ class Mssp {
  *     results.)
  */
 
+#if WARP_REDUCE==1
 template<class OP>
 __device__ inline typename OP::RedElTp
 scanIncWarp( volatile typename OP::RedElTp* ptr, const uint32_t idx ) {
@@ -192,7 +193,22 @@ scanIncWarp( volatile typename OP::RedElTp* ptr, const uint32_t idx ) {
     }
     return OP::remVolatile(ptr[idx]);
 }
+#else
+template<class OP>
+__device__ inline typename OP::RedElTp
+scanIncWarp( volatile typename OP::RedElTp* ptr, const uint32_t idx ) {
+    const uint32_t lane = idx & (WARP-1);
 
+    if(lane==0) {
+        #pragma unroll
+        //  Probably has to loop over lgWarp (inactive threads)
+        for(int i=1; i<WARP; i++) {
+            ptr[idx+i] = OP::apply(ptr[idx+i-1], ptr[idx+i]);
+        }
+    }
+    return OP::remVolatile(ptr[idx]);
+}
+#endif
 
 /**
  * A CUDA-block of threads cooperatively scan with generic-binop `OP`
@@ -200,6 +216,12 @@ scanIncWarp( volatile typename OP::RedElTp* ptr, const uint32_t idx ) {
  * `idx` is the local thread index within a cuda block (threadIdx.x)
  * Each thread returns the corresponding scanned element of type
  *   `typename OP::RedElTp`. Note that this is NOT published to shared memory!
+ *
+ *******************************************************
+ * Weekly Assignment 2, Task 3:
+ *******************************************************
+ * Find and fix the bug (race condition) that manifests
+ *  only when the CUDA block size is set to 1024.
  */
 template<class OP>
 __device__ inline typename OP::RedElTp
