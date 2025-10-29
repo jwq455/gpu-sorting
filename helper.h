@@ -13,6 +13,7 @@
 #include "string.h"
 #include <sys/time.h>
 #include <time.h>
+#include <stdint.h>
 
 #define GPU_RUNS            250
 
@@ -36,9 +37,6 @@
 typedef int        int32_t;
 typedef long long  int64_t;
 #endif
-
-typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
 
 #define min(a,b) ( ((a)<(b))? (a) : (b) )
 
