@@ -13,7 +13,7 @@ EXEC_RADIX		= radix-sort
 EXEC_CUB		= cub-sort
 
 
-default: compile_cub run_cpu compile_radix run_gpu
+default: compile_cub run_cub compile_radix run_radix
 
 compile_radix: 	$(EXEC_RADIX)
 compile_cub: 	$(EXEC_CUB)
