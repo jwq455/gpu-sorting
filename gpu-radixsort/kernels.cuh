@@ -3,7 +3,7 @@
 
 #include <cuda_runtime.h>
 #include "pbb_kernels.cuh"
-#include "constants.cuh"
+#include "../helper.h"
 
 #define GET_BITS(a, mask, shift) ((1<<mask)-1) & (a>>(shift*mask))
 // Gets the i*lgH+k'th bit of 'a'

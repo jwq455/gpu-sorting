@@ -3,11 +3,6 @@
 
 using namespace std;
 
-#define GPU_RUNS    50
-
-#define TILE_SIZE 32
-
-
 // FROM ASSIGNMENT 2
 uint32_t nextMul32(uint32_t x) {
     return ((x + 31) / 32) * 32;

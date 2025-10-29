@@ -1,6 +1,5 @@
-//#include "../../cub-1.8.0/cub/cub.cuh"   // or equivalently <cub/device/device_histogram.cuh>
 #include "cub/cub.cuh"
-#include "helper.cu.h"
+#include "../helper.h"
 
 template<class Z>
 bool validateZ(Z* A, uint32_t sizeAB) {
@@ -36,7 +35,7 @@ double sortRedByKeyCUB( uint32_t* data_keys_in
                                       );
         cudaMalloc(&tmp_sort_mem, tmp_sort_len);
     }
-    cudaCheckError();
+    gpuCheck( cudaPeekAtLastError() );
 
     { // one dry run
         cub::DeviceRadixSort::SortKeys( tmp_sort_mem, tmp_sort_len
@@ -45,7 +44,7 @@ double sortRedByKeyCUB( uint32_t* data_keys_in
                                       );
         cudaDeviceSynchronize();
     }
-    cudaCheckError();
+    gpuCheck( cudaPeekAtLastError() );
 
     // timing
     double elapsed;
@@ -59,7 +58,7 @@ double sortRedByKeyCUB( uint32_t* data_keys_in
                                       );
     }
     cudaDeviceSynchronize();
-    cudaCheckError();
+    gpuCheck( cudaPeekAtLastError() );
 
     gettimeofday(&t_end, NULL);
     timeval_subtract(&t_diff, &t_end, &t_start);
@@ -94,7 +93,7 @@ int main (int argc, char * argv[]) {
 
     cudaMemcpy(h_keys_res, d_keys_out, N*sizeof(uint32_t), cudaMemcpyDeviceToHost);
     cudaDeviceSynchronize();
-    cudaCheckError();
+    gpuCheck( cudaPeekAtLastError() );
 
     bool success = validateZ(h_keys_res, N);
 

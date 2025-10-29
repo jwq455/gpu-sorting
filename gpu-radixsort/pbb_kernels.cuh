@@ -2,7 +2,7 @@
 #define PBB_KERNELS
 
 #include <cuda_runtime.h>
-#include "constants.cuh"
+#include "../helper.h"
 
 /**
  * Naive memcpy kernel, for the purpose of comparing with

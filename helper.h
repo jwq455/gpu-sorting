@@ -3,8 +3,8 @@
  *        "https://github.com/diku-dk/pmph-e2025-pub/tree/main/weeklies/assignment-3-4"
  * */
 
-#ifndef HELPER
-#define HELPER
+#ifndef HELPER_H
+#define HELPER_H
 
 #include <math.h>
 #include <stdio.h>
@@ -13,20 +13,60 @@
 #include "string.h"
 #include <sys/time.h>
 #include <time.h>
-#include <stdint.h>
 
-//#if 0
-//typedef int        int32_t;
-//typedef long long  int64_t;
-//#endif
+#define GPU_RUNS            250
 
-//typedef unsigned int uint32_t;
-//typedef unsigned long long uint64_t;
+#define TILE_SIZE           32
+
+#define DEBUG_INFO          true
+
+#define lgWARP              5
+#define WARP                (1<<lgWARP)
+
+#ifndef ELEMS_PER_THREAD
+#define ELEMS_PER_THREAD    24
+#endif
+
+#ifndef WARP_REDUCE
+#define WARP_REDUCE         1
+#endif
+
+
+#if 0
+typedef int        int32_t;
+typedef long long  int64_t;
+#endif
+
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
 
 #define min(a,b) ( ((a)<(b))? (a) : (b) )
 
 #define gpuAssert(code) { __cudassert((code), __FILE__, __LINE__); }
 #define gpuCheck(code) { __cudassert((code), __FILE__, __LINE__, false); }
+
+uint32_t MAX_HWDTH;
+uint32_t MAX_BLOCK;
+uint32_t MAX_SHMEM;
+
+cudaDeviceProp prop;
+
+void initHwd() {
+    int nDevices;
+    cudaGetDeviceCount(&nDevices);
+    cudaGetDeviceProperties(&prop, 0);
+    MAX_HWDTH = prop.maxThreadsPerMultiProcessor * prop.multiProcessorCount;
+    MAX_BLOCK = prop.maxThreadsPerBlock;
+    MAX_SHMEM = prop.sharedMemPerBlock;
+
+    if (DEBUG_INFO) {
+        printf("Device name: %s\n", prop.name);
+        printf("Number of hardware threads: %d\n", MAX_HWDTH);
+        printf("Max block size: %d\n", MAX_BLOCK);
+        printf("Shared memory size: %d\n", MAX_SHMEM);
+        puts("====");
+    }
+}
 
 
 void __cudassert(cudaError_t code,

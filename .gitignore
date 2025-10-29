@@ -4,6 +4,8 @@
 
 !*/
 
-*/cub-1.8.0
+*.tar.gz
+
+!*/cub-1.8.0
 
 !Makefile
