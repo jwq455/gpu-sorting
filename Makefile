@@ -6,9 +6,8 @@ DIR_CUB			= ./cub-radixsort
 DIR_FUTHARK		= ./futhark-radixsort
 
 SRC_RADIX 		= $(DIR_RADIX)/radix-sort-gpu.cu
-SRC_CUB			= 
-HELPERS_RADIX 	= ./helper.h $(DIR_RADIX)/constants.cuh
-HELPERS_CUB 	= ./helper.h
+SRC_CUB			= $(DIR_CUB)/radix-sort-cub.cu
+HELPERS			= ./helper.h
 KERNELS 		= $(DIR_RADIX)/kernels.cuh $(DIR_RADIX)/pbb_kernels.cuh
 EXEC_RADIX		= radix-sort
 EXEC_CUB		= cub-sort
@@ -24,7 +23,6 @@ $(EXEC_RADIX): $(SRC_RADIX) $(HELPERS) $(KERNELS)
 
 $(EXEC_CUB): $(SRC_CUB) $(HELPERS)
 	$(CXX) -I$(CUB)/cub -o $(EXEC_CUB) $(SRC_CUB)
-
 
 run_radix: $(EXEC_RADIX)
 	./$(EXEC_RADIX) 100000000
