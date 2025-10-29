@@ -10,16 +10,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include "string.h"
 #include <sys/time.h>
 #include <time.h>
+#include <stdint.h>
 
-#if 0
-typedef int        int32_t;
-typedef long long  int64_t;
-#endif
+//#if 0
+//typedef int        int32_t;
+//typedef long long  int64_t;
+//#endif
 
-typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
+//typedef unsigned int uint32_t;
+//typedef unsigned long long uint64_t;
 
 #define min(a,b) ( ((a)<(b))? (a) : (b) )
 
@@ -72,6 +74,25 @@ bool validate(T* A, const uint64_t sizeA){
     }
     printf("VALID RESULT!\n");
     return true;
+}
+
+template<class ElTp>
+int validateTranspose(ElTp* A, ElTp* trA, const uint32_t rowsA, const uint32_t colsA){
+  int valid = 1;
+  for(uint64_t i = 0; i < rowsA; i++) {
+    for(uint64_t j = 0; j < colsA; j++) {
+      if(trA[j*rowsA + i] != A[i*colsA + j]) {
+        printf("row: %llu, col: %llu, A: %.4f, trA: %.4f\n"
+              , i, j, A[i*colsA + j], trA[j*rowsA + i] );
+        valid = 0;
+        break;
+      }
+    }
+    if(!valid) break;
+  }
+  if (valid) printf("GPU TRANSPOSITION   VALID!\n");
+  else       printf("GPU TRANSPOSITION INVALID!\n");
+  return valid;
 }
 
 #endif
