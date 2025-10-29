@@ -42,6 +42,7 @@ typedef long long  int64_t;
 
 #define gpuAssert(code) { __cudassert((code), __FILE__, __LINE__); }
 #define gpuCheck(code) { __cudassert((code), __FILE__, __LINE__, false); }
+#define cudaSucceeded(ans) { __cudassert((ans), __FILE__, __LINE__); }
 
 uint32_t MAX_HWDTH;
 uint32_t MAX_BLOCK;
