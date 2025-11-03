@@ -45,7 +45,7 @@ uint32_t getNumBlocks(const uint32_t N, const uint32_t B, uint32_t* num_chunks) 
 }
 
 template<int B, int Q, int lgH>
-void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
+void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, uint32_t *hist, uint32_t *hist_tr, uint32_t *hist_scan, uint32_t *hist_scan_tr, uint32_t* d_tmp, size_t N) {
     unsigned long elementsPerBlock = B*Q;
     // Setup execution parameters
 
@@ -94,20 +94,20 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     uint32_t *sort_mem_ptr = tmp_inp;
 
     // global Historgram buffer
-    uint32_t *hist;
-    uint32_t *hist_tr;
-    uint32_t *hist_scan;
-    uint32_t *hist_scan_tr;
-    cudaMalloc((void **) &hist, hist_mem_size);
-    cudaMalloc((void **) &hist_tr, hist_mem_size);
-    cudaMalloc((void **) &hist_scan, hist_mem_size);
-    cudaMalloc((void **) &hist_scan_tr, hist_mem_size);
+    //uint32_t *hist;
+    //uint32_t *hist_tr;
+    //uint32_t *hist_scan;
+    //uint32_t *hist_scan_tr;
+    //cudaMalloc((void **) &hist, hist_mem_size);
+    //cudaMalloc((void **) &hist_tr, hist_mem_size);
+    //cudaMalloc((void **) &hist_scan, hist_mem_size);
+    //cudaMalloc((void **) &hist_scan_tr, hist_mem_size);
 
-    uint32_t* d_tmp;
-    cudaMalloc((void**)&d_tmp, MAX_BLOCK*sizeof(uint32_t));
+    //uint32_t* d_tmp;
+    //cudaMalloc((void**)&d_tmp, MAX_BLOCK*sizeof(uint32_t));
 
-    uint32_t *hist_test = (uint32_t *)calloc(hist_size, sizeof(uint32_t));
-    uint32_t *d_test = (uint32_t *)calloc(N, sizeof(uint32_t));
+    //uint32_t *hist_test = (uint32_t *)calloc(hist_size, sizeof(uint32_t));
+    //uint32_t *d_test = (uint32_t *)calloc(N, sizeof(uint32_t));
 
     // Test runtime - should be measured from here, maybe - way too fast right now??
     // double elapsed;
@@ -230,16 +230,16 @@ void radixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
 
     // printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
 
-    cudaFree(hist);
-    cudaFree(hist_tr);
-    cudaFree(hist_scan);
-    cudaFree(hist_scan_tr);
+    //cudaFree(hist);
+    //cudaFree(hist_tr);
+    //cudaFree(hist_scan);
+    //cudaFree(hist_scan_tr);
 }
 
 template<int B, int Q, int lgH>
-void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
+void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, uint32_t *hist, uint32_t *hist_tr, uint32_t *hist_scan, uint32_t *hist_scan_tr, uint32_t* d_tmp, size_t N) {
     // dry run
-    radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
+    radixSort<B, Q, lgH>(d_A, d_B, h_B, hist, hist_tr, hist_scan, hist_scan_tr, d_tmp, N);
     cudaDeviceSynchronize();
     gpuAssert( cudaPeekAtLastError() );
 
@@ -262,7 +262,7 @@ void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     gettimeofday(&t_start, NULL);
 
     for(int i=0; i<GPU_RUNS; i++) {
-        radixSort<B, Q, lgH>(d_A, d_B, h_B, N);
+        radixSort<B, Q, lgH>(d_A, d_B, h_B, hist, hist_tr, hist_scan, hist_scan_tr, d_tmp, N);
     }
     cudaDeviceSynchronize();
 
@@ -327,7 +327,26 @@ void runAll(size_t N) {
     uint32_t *d_B;
     cudaMalloc((void **) &d_A, sizeof(uint32_t)*N);
     cudaMalloc((void **) &d_B, sizeof(uint32_t)*N);
+    
+    unsigned long elementsPerBlock = B*Q;
+    const int blocks = (N + elementsPerBlock - 1) / elementsPerBlock;
+    const int H = 1<<lgH;
+    int hist_size = blocks*H;
+    const int hist_mem_size = sizeof(uint32_t)*hist_size;
 
+    uint32_t *hist;
+    uint32_t *hist_tr;
+    uint32_t *hist_scan;
+    uint32_t *hist_scan_tr;
+    cudaMalloc((void **) &hist, hist_mem_size);
+    cudaMalloc((void **) &hist_tr, hist_mem_size);
+    cudaMalloc((void **) &hist_scan, hist_mem_size);
+    cudaMalloc((void **) &hist_scan_tr, hist_mem_size);
+
+    uint32_t* d_tmp;
+    cudaMalloc((void**)&d_tmp, MAX_BLOCK*sizeof(uint32_t));
+
+    
     // Copy host memory to device
     cudaMemcpy(d_A, h_A, sizeof(uint32_t)*N, cudaMemcpyHostToDevice);
 
@@ -335,14 +354,18 @@ void runAll(size_t N) {
 
     // compute efficient radix sort (validation and timing is done in runRadixSort())
     {
-        runRadixSort<B, Q, lgH>(d_A, d_B, h_B, N);
+        runRadixSort<B, Q, lgH>(d_A, d_B, h_B, hist, hist_tr, hist_scan, hist_scan_tr, d_tmp, N);
     }
 
     free(h_A);
     free(h_B);
     cudaFree(d_A);
     cudaFree(d_B);
-
+    cudaFree(hist);
+    cudaFree(hist_tr);
+    cudaFree(hist_scan);
+    cudaFree(hist_scan_tr);
+    cudaFree(d_tmp);
 }
 
 int main(int argc, char *argv[]) {
