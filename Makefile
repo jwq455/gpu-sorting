@@ -16,9 +16,6 @@ EXEC_RADIX		= radix-sort
 EXEC_CUB		= cub-sort
 EXEC_FUT		= fut-sort
 
--- compiled input @ data.in
--- output @ sorted-data.out
-
 
 default: compile_cub run_cub compile_radix run_radix
 
@@ -34,6 +31,8 @@ $(EXEC_CUB): $(SRC_CUB) $(HELPERS)
 	$(CXX) -I$(CUB)/cub -o $(EXEC_CUB) $(SRC_CUB)
 
 $(EXEC_FUT): $(SRC_FUT)
+	futhark pkg add github.com/diku-dk/sorts
+	futhark pkg sync
 	futhark cuda -o $(EXEC_FUT) $(SRC_FUT)
 
 run_radix: $(EXEC_RADIX)

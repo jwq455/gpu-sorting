@@ -1,7 +1,10 @@
 import "lib/github.com/diku-dk/sorts/radix_sort"
 -- 32-bit keys
 -- ==
--- entry: radix_sort_i32
--- random input { [100000000]i32 }
+-- compiled input @ data.in
+-- output @ sorted-data.out
+-- 
+-- random input { [100000000]u32 }
 
-entry radix_sort_i32 = radix_sort 32 i32.get_bit
+let main(xs: []u32) : []u32 =
+    radix_sort_int u32.num_bits u32.get_bit xs
