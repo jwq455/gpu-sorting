@@ -239,12 +239,13 @@ partitionScatterKer(uint32_t *d_ind,
 
     }
 
-    // Maybe move to a copyFromGlb2ShrHis<>() device kernel potentially
+    const int H_global = (1<<lgH); 
+
     #pragma unroll
     for (int q = 0; q * B + threadIdx.x < H; q++) {
         uint32_t loc_ind = q * B + threadIdx.x;
-        uint32_t glb_ind = blockIdx.x*H + loc_ind;
-        if (glb_ind < gridDim.x*H) {
+        uint32_t glb_ind = blockIdx.x*H_global + loc_ind;
+        if (glb_ind < gridDim.x*H_global) {
             uint32_t elem1 = const_cast<const uint32_t&>(hist[glb_ind]);
             uint32_t elem2 = const_cast<const uint32_t&>(hist_scan[glb_ind]);
             hist_orig[loc_ind] = elem1;
@@ -265,11 +266,11 @@ partitionScatterKer(uint32_t *d_ind,
             if (i*B + threadIdx.x < H) res = scanIncBlock<Add<uint32_t>>(tmp_ptr, threadIdx.x);
             __syncthreads();
             if (i*B + threadIdx.x < H) tmp_ptr[threadIdx.x] = res;
+	     __syncthreads();
+            if (i*B + threadIdx.x < H && i>0) tmp_ptr[threadIdx.x] += split;
             __syncthreads();
             uint32_t max_tid = (H >= (i+1)*B) ? B : (H - i*B);
             split = tmp_ptr[max_tid-1];
-            __syncthreads();
-            if (i*B + threadIdx.x < H && i>0) tmp_ptr[threadIdx.x] += split;
             __syncthreads();
             tmp_ptr = tmp_ptr + B;
             __syncthreads();
