@@ -31,19 +31,30 @@ compile_fut:    $(EXEC_FUT)
 
 
 $(EXEC_RADIX): $(SRC_RADIX) $(HELPERS) $(KERNELS)
-        $(CXX) $(NVCCFLAGS) -o $(EXEC_RADIX) $(SRC_RADIX)
+	$(CXX) $(NVCCFLAGS) -o $(EXEC_RADIX) $(SRC_RADIX)
 
 $(EXEC_CUB): $(SRC_CUB) $(HELPERS)
-        $(CXX) -I$(CUB)/cub -o $(EXEC_CUB) $(SRC_CUB)
+	$(CXX) -I$(CUB)/cub -o $(EXEC_CUB) $(SRC_CUB)
 
 run_radix: $(EXEC_RADIX)
-        ./$(EXEC_RADIX) $(N)
+	./$(EXEC_RADIX) $(N)
 
 run_cub: $(EXEC_CUB)
-        ./$(EXEC_CUB) $(N)
+	./$(EXEC_CUB) $(N)
 
 run_fut: $(SRC_FUT)
-        futhark pkg add github.com/diku-dk/sorts
-        futhark pkg sync
-        futhark dataset --seed=2025 --u32-bounds=0:4294967295 -g [$(N)]u32 > data.in
-        futhark bench $(SRC_FUT)
+	futhark pkg add github.com/diku-dk/sorts
+	futhark pkg sync
+	futhark dataset --seed=2025 --u32-bounds=0:4294967295 -g [$(N)]u32 > $(DIR_FUT)/data.in
+	futhark bench $(SRC_FUT)
+
+
+validation_data:
+	futhark dataset --seed=2025 --u32-bounds=0:4294967295 -g [500000]u32 > data.in
+
+clean:
+	rm -f $(EXEC_RADIX) $(EXEC_CUB) $(EXEC_FUT)
+	rm -rf lib futhark.pkg
+	rm  $(DIR_FUT)/data.in $(DIR_FUT)/radix-sort-fut  $(DIR_FUT)/radix-sort-fut.c
+
+
