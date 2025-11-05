@@ -1,5 +1,5 @@
 /*
- * Helper code stolen from:
+ * Helper code taken from:
  *        "https://github.com/diku-dk/pmph-e2025-pub/tree/main/weeklies/assignment-3-4"
  * */
 
