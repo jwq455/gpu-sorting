@@ -1,8 +1,6 @@
 import "lib/github.com/diku-dk/sorts/radix_sort"
 -- 32-bit keys
 -- ==
--- compiled input @ data.in
--- output @ sorted-data.out
 -- 
 -- random input { [100000000]u32 }
 
