@@ -15,7 +15,7 @@
 #include <time.h>
 #include <stdint.h>
 
-#define GPU_RUNS            250
+#define GPU_RUNS            50
 
 #define TILE_SIZE           32
 
