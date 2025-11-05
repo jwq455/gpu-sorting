@@ -111,6 +111,10 @@ bool validate(T* A, const uint64_t sizeA){
             return false;
         }
     }
+    if (A[sizeA-1] == 0) {
+    	 printf("INVALID RESULT, Array only contains zeros" );
+         return false;
+    }
     printf("VALID RESULT!\n");
     return true;
 }

@@ -284,7 +284,7 @@ void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, uint32_t *hist, u
     cudaMemcpy(h_B, d_B, sizeof(uint32_t)*N, cudaMemcpyDeviceToHost);
     validate<uint32_t>(h_B, N);
 
-    // printf("sorted array after sort:\n");
+    //printf("sorted array after sort:\n");
     // for (int i = 0; i < N; i++) {
     //     printf("%d ", h_B[i]);
     // }
