@@ -11,28 +11,6 @@
 #define GET_KTH_BIT_UNSET(a, i, lgH, k) (1) ^ ((1) & (a>>(i*lgH+k))) 
 
 
-// Rewrite such that you don't need CHUNK
-// glbOffs = blockIdx.x*H
-// glbSize = BLOCKS x H 
-// template<int H, int CHUNK>
-// __device__ inline void
-// copyFromShr2Glb(const uint32_t glb_offset,
-//                 const uint32_t size_glb,
-//                 uint32_t* d_out,
-//                 volatile uint32_t* shmem)
-// {
-//     #pragma unroll
-//     for (uint32_t i = 0; i < CHUNK; i++) {
-//         uint32_t loc_ind = threadIdx.x + H * i;
-//         uint32_t glb_ind = glb_offset + loc_ind;
-//         if (glb_ind < size_glb) {
-//             uint32_t elm = const_cast<const uint32_t&>(shmem[loc_ind]);
-//             d_out[glb_ind] = elm;
-//         }
-//     }
-//     __syncthreads();
-// }
-
 template<int H, int B>
 __device__ inline void
 copyFromShr2Glb(const uint32_t glb_offset,
@@ -120,49 +98,11 @@ scanRegStoreRed(uint32_t* regElem,
     shrmem[threadIdx.x] = regElem[Q-1];
 }
 
-// template<int B>
-// __device__ inline void
-// scanRedShr(volatile uint32_t* redShr,
-//            uint32_t idx)
-// {
-//     int offset = 1;
-//     for (int d = B >> 1; d > 0; d >> = 1)
-//     // build sum in place up the tree
-//     {
-//         __syncthreads();
-//         if (idx < d) {         
-//             int ai = offset * (2 * idx + 1) - 1;
-//             int bi = offset * (2 * idx + 2) - 1;
-            
-//             redShr[bi] += redShr[ai];
-//         }
-//         offset *= 2;
-//     }
-//     if (idx == 0)
-//     {
-//       redShr[B - 1] = 0;
-//     } // clear the last element
-//     for (int d = 1; d < B; d *= 2) // traverse down tree & build scan
-//     {
-//         offset >> = 1;
-//         __syncthreads();
-//         if (idx < d) {
-//             int ai = offset * (2 * idx + 1) - 1;
-//             int bi = offset * (2 * idx + 2) - 1;
-//             float t = redShr[ai];
-//             redShr[ai] = redShr[bi];
-//             redShr[bi] += t;
-//         }
-//     }
-//     __syncthreads();
-// }
-
-
 template<class OP>
 __device__ void
 scan1Block( volatile typename OP::RedElTp* shmem_red) {
     typename OP::RedElTp elm = scanIncBlock<OP>(shmem_red, threadIdx.x);
-    __syncthreads(); // Not sure about this sync, I am afraid if we don't sync we will mess up the scanIncBlock() call
+    __syncthreads();
     shmem_red[threadIdx.x] = elm;
 }
 
@@ -198,10 +138,7 @@ histogramKernel(uint32_t *arr,
         histShr[i*B + threadIdx.x] = 0;
 
     }
-    // if (H-B>0 && threadIdx.x < (H-B)) histShr[threadIdx.x+B] = 0;
-    // Not sure this sync has to be here
     __syncthreads();
-    // int num_bits = ((32 - bits_iter*lgH) >= lgH) ? lgH : (32 - bits_iter*lgH);
 
     uint32_t block_offset =  blockIdx.x * B*Q;
     uint32_t key_idx;
@@ -209,7 +146,6 @@ histogramKernel(uint32_t *arr,
         uint32_t arr_idx = block_offset + q * B + threadIdx.x;
         if (arr_idx<N) {
             key_idx = GET_BITS(arr[arr_idx], bits, bits_iter, lgH); // I THINK THIS ONE MESSES UP THE HISTOGRAM IN THE LAST ITERATION IF sizeof(elem) % lgH != 0
-            // if (blockIdx.x==1 && bits_iter==3) printf("bin: %d\n", key_idx);
             atomicAdd(&histShr[key_idx], 1);
         }
     }
@@ -249,21 +185,14 @@ partitionScatterKer(uint32_t *d_ind,
     uint32_t loc_ind;
     uint32_t glb_idx;
 
-    // Perhaps copy straight to register and figure out way to keep updating local registers instead of copyFromShr2Reg
+    //Ideally copy straight to register and figure out way to keep updating local registers instead of copyFromShr2Reg
     copyFromGlb2Shr<B, Q>(blockIdx.x*B*Q, N, d_ind, elemShr);
     __syncthreads();
-    // if (threadIdx.x==0 && blockIdx.x==0) {
-    //     printf("PRINTING SHARED MEM:\n");
-    //     for (int i = 0; i < B*Q; i++) {
-    //         printf("%d ", elemShr[i]);
-    //     }
-    //     printf("\n\n");
-    // }
 
     int block_offset = blockIdx.x * B*Q;
 
     for (int k = 0; k < num_bits; k++) {
-        // last iteration we need to copy elements into shared memory differently, such that -! I DON'T UNDERSTAND THIS NOT SURE !-
+        // last iteration we need to copy elements into shared memory differently, such that
         // It cause you should read from registers to global memory in the end after this loop has finished and not from shared memory
         // to global memory - also this allows to use less shared memory, since the actual elements will be held in registers we can therefore 
         // overwrite the shared memory with the histogram for instance.
@@ -287,8 +216,6 @@ partitionScatterKer(uint32_t *d_ind,
 
         uint32_t max_tid = (N >= block_offset+B*Q) ? B : (N - block_offset + Q - 1) / Q;
 
-        // if (threadIdx.x==0 && k==0) printf("maxx_tid=%d\n", max_tid);
-
         uint16_t split = elemShr[max_tid-1];
         if (threadIdx.x==0) acc=0;
         else acc = elemShr[threadIdx.x-1];
@@ -299,7 +226,6 @@ partitionScatterKer(uint32_t *d_ind,
         //  && threadIdx.x*Q+q
         for (int q = 0; q < Q && block_offset+threadIdx.x*Q+q < N; q++) {
             uint16_t zeroone = (uint16_t)GET_KTH_BIT_UNSET(regElem[q], i, lgH, k);
-            // acc += zeroone;
             int pos;
             if (zeroone) {
                 pos = isT[q] + acc - 1;
@@ -313,27 +239,13 @@ partitionScatterKer(uint32_t *d_ind,
 
     }
 
-    // if (threadIdx.x==0 && blockIdx.x==1) {
-    //     printf("PRINTING SHARED MEM AFTER 1-BIT SPLIT PARTITION:\n");
-    //     for (int i = 0; block_offset+i < N; i++) {
-    //         printf("%d ", elemShr[i]);
-    //     }
-    //     printf("\n\n");
-    // }
+    const int H_global = (1<<lgH); 
 
-
-    // const int chunk = (H+B-1) / B;
-
-    // __shared__ uint32_t hist_orig[H];
-    // __shared__ uint32_t hist_scan_shr[H];
-
-    
-    // Maybe move to a copyFromGlb2ShrHis<>() device kernel potentially
     #pragma unroll
     for (int q = 0; q * B + threadIdx.x < H; q++) {
         uint32_t loc_ind = q * B + threadIdx.x;
-        uint32_t glb_ind = blockIdx.x*H + loc_ind;
-        if (glb_ind < gridDim.x*H) {
+        uint32_t glb_ind = blockIdx.x*H_global + loc_ind;
+        if (glb_ind < gridDim.x*H_global) {
             uint32_t elem1 = const_cast<const uint32_t&>(hist[glb_ind]);
             uint32_t elem2 = const_cast<const uint32_t&>(hist_scan[glb_ind]);
             hist_orig[loc_ind] = elem1;
@@ -341,20 +253,6 @@ partitionScatterKer(uint32_t *d_ind,
         }
     }
     
-    // if (threadIdx.x==0 && blockIdx.x==0) {
-    //     printf("PRINTING hist_orig:\n");
-    //     for (int i = 0; i < H; i++) {
-    //         printf("%d ", hist_orig[i]);
-    //     }
-    //     printf("\n\n");
-    //     printf("PRINTING hist_scan_shr:\n");
-    //     for (int i = 0; i < H; i++) {
-    //         printf("%d ", hist_scan_shr[i]);
-    //     }
-    //     printf("\n\n");
-    // }
-
-
     __syncthreads();
     if (B>=H) {
         scan1Block<Add<uint32_t>>(hist_orig);
@@ -368,25 +266,17 @@ partitionScatterKer(uint32_t *d_ind,
             if (i*B + threadIdx.x < H) res = scanIncBlock<Add<uint32_t>>(tmp_ptr, threadIdx.x);
             __syncthreads();
             if (i*B + threadIdx.x < H) tmp_ptr[threadIdx.x] = res;
+	     __syncthreads();
+            if (i*B + threadIdx.x < H && i>0) tmp_ptr[threadIdx.x] += split;
             __syncthreads();
             uint32_t max_tid = (H >= (i+1)*B) ? B : (H - i*B);
             split = tmp_ptr[max_tid-1];
-            __syncthreads();
-            if (i*B + threadIdx.x < H && i>0) tmp_ptr[threadIdx.x] += split;
             __syncthreads();
             tmp_ptr = tmp_ptr + B;
             __syncthreads();
         }
     }
 
-
-    // if (threadIdx.x==0 && blockIdx.x==0) {
-    //     printf("PRINTING hist_orig AFTER SCAN:\n");
-    //     for (int i = 0; i < H; i++) {
-    //         printf("%d ", hist_orig[i]);
-    //     }
-    //     printf("\n\n");
-    // }
 
     // Should keep data in registers and write from registers to global memory
     for (int g = 0; g < Q; g++) {

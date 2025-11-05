@@ -1,5 +1,5 @@
 /*
- * Helper code stolen from:
+ * Helper code taken from:
  *        "https://github.com/diku-dk/pmph-e2025-pub/tree/main/weeklies/assignment-3-4"
  * */
 
@@ -15,7 +15,7 @@
 #include <time.h>
 #include <stdint.h>
 
-#define GPU_RUNS            250
+#define GPU_RUNS            50
 
 #define TILE_SIZE           32
 
