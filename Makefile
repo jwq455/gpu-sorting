@@ -1,4 +1,9 @@
-CXX        		= nvcc -O3
+Q ?= 22
+B ?= 256
+lgH ?= 8
+N ?= 100000000
+
+CXX        		= nvcc -O3 -Wno-deprecated-gpu-targets
 CUB		   		= cub-1.8.0
 
 DIR_RADIX 		= ./gpu-radixsort
@@ -16,6 +21,7 @@ EXEC_RADIX		= radix-sort
 EXEC_CUB		= cub-sort
 EXEC_FUT		= fut-sort
 
+NVCCFLAGS += -DQ_def=$(Q) -DB_def=$(B) -DlgH_def=$(lgH)
 
 default: compile_cub run_cub compile_radix run_radix
 
@@ -25,7 +31,7 @@ compile_fut:	$(EXEC_FUT)
 
 
 $(EXEC_RADIX): $(SRC_RADIX) $(HELPERS) $(KERNELS)
-	$(CXX) -o $(EXEC_RADIX) $(SRC_RADIX)
+	$(CXX) $(NVCCFLAGS) -o $(EXEC_RADIX) $(SRC_RADIX)
 
 $(EXEC_CUB): $(SRC_CUB) $(HELPERS)
 	$(CXX) -I$(CUB)/cub -o $(EXEC_CUB) $(SRC_CUB)
@@ -36,10 +42,10 @@ $(EXEC_FUT): $(SRC_FUT)
 	futhark cuda -o $(EXEC_FUT) $(SRC_FUT)
 
 run_radix: $(EXEC_RADIX)
-	./$(EXEC_RADIX) 100000000
+	./$(EXEC_RADIX) $(N)
 
 run_cub: $(EXEC_CUB)
-	./$(EXEC_CUB) 100000000
+	./$(EXEC_CUB) $(N)
 
 # run_fut: $(EXEC_FUT)
 

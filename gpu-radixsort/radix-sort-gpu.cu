@@ -277,7 +277,7 @@ void runRadixSort(uint32_t *d_A, uint32_t *d_B, uint32_t *h_B, size_t N) {
     // printf("Radix sort of uint32_t GPU runs in: %.2f microsecs, GB/sec: %.2f\n", elapsed, gigaBytesPerSec);
 
     // gpuAssert( cudaPeekAtLastError() );
-    printf("CUB Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
+    printf("Radix Sorting for N=%lu runs in: %.2f us, Sorted keys per second: %.2f\n", N, elapsed, (N/(elapsed/1e6)));
 
     // // Print and validate :)
     printf("Validating result... ");
@@ -355,10 +355,12 @@ int main(int argc, char *argv[]) {
     initHwd();
 
     const size_t SIZE_A = atoi(argv[1]);
+				//Passed from makefile 
+    const int B     = B_def; // Thread-block size
+    const int Q     = Q_def;  // Number of elements processed by each thread
+    const int lgH   = lgH_def; // Number of bits processed in each pass of counting sort
 
-    const int B     = 512; // Thread-block size
-    const int Q     = 10;  // Number of elements processed by each thread
-    const int lgH   = 8;   // Number of bits processed in each pass of counting sort
+    printf("SRunning with parameters B: %d, Q: %d, and lgH; %d\n", B, Q, lgH);
 
     runAll<B, Q, lgH>(SIZE_A);
 
