@@ -1,0 +1,8 @@
+nvcc -O3 -Wno-deprecated-gpu-targets -Icub-1.8.0/cub -o cub-sort ./cub-radixsort/radix-sort-cub.cu
+./cub-sort 100000,
+CUB Sorting for N=100000 runs in: 165.12 us, Sorted keys per second: 605620155.04, VALID: 1
+futhark pkg add github.com/diku-dk/sorts
+futhark.pkg not found - pretending it's empty.
+Added new required package github.com/diku-dk/sorts 0.6.0.
+Remember to run 'futhark pkg sync'.
+futhark pkg sync
